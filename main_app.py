@@ -579,8 +579,8 @@ class FabricCNCApp:
         status_frame = ctk.CTkFrame(self.app_bar, fg_color="transparent")
         status_frame.grid(row=0, column=2, padx=UI_PADDING['MEDIUM'], pady=UI_PADDING['SMALL'], sticky="e")
         
-        ctk.CTkLabel(status_frame, text="Status:", text_color=UI_COLORS['ON_PRIMARY'], font=("Arial", 12, "bold")).pack(side="left", padx=(0, 5))
-        self.status_label = ctk.CTkLabel(status_frame, text="Ready", text_color=UI_COLORS['ON_PRIMARY'], font=("Arial", 12, "bold"))
+        ctk.CTkLabel(status_frame, text="Status:", text_color=UI_COLORS['ON_PRIMARY'], font=("Arial", 18, "bold")).pack(side="left", padx=(0, 5))
+        self.status_label = ctk.CTkLabel(status_frame, text="Ready", text_color=UI_COLORS['ON_PRIMARY'], font=("Arial", 18, "bold"))
         self.status_label.pack(side="left", padx=(0, 20))
         
         # Close button at the very top right
@@ -620,7 +620,7 @@ class FabricCNCApp:
         import_btn.pack(fill="x", padx=UI_PADDING['MEDIUM'], pady=(0, UI_PADDING['MEDIUM']))
         
         # Pattern Library label and dropdown
-        ctk.CTkLabel(load_design_section, text="Pattern Library", font=("Arial", 13, "bold"), text_color=UI_COLORS['PRIMARY_COLOR']).pack(pady=(UI_PADDING['MEDIUM'], UI_PADDING['SMALL']), padx=UI_PADDING['MEDIUM'], anchor="w")
+        ctk.CTkLabel(load_design_section, text="Pattern Library", font=("Arial", 14, "bold"), text_color=UI_COLORS['PRIMARY_COLOR']).pack(pady=(UI_PADDING['MEDIUM'], UI_PADDING['SMALL']), padx=UI_PADDING['MEDIUM'], anchor="w")
         
         # Container frame for patterns browser
         self.patterns_browser_container = ctk.CTkFrame(load_design_section, fg_color="transparent")
@@ -638,7 +638,7 @@ class FabricCNCApp:
         toolbar_frame.grid_columnconfigure(2, weight=0)
         
         # Keep path label for existing logic, but hide it from UI
-        self.path_label = ctk.CTkLabel(toolbar_frame, text="", text_color="#666666", font=("Arial", 9))
+        self.path_label = ctk.CTkLabel(toolbar_frame, text="", text_color="#666666", font=("Arial", 11))
         self.path_label.grid_forget()
         
         icon_btn_style = {
@@ -765,10 +765,10 @@ class FabricCNCApp:
         motor_section.grid_rowconfigure(11, weight=1)  # Z limit value display row
         
         # Arrow buttons - stacked layout with equal widths and better spacing
-        self._add_compact_jog_button(motor_section, "↑", lambda: self._jog('Y', +self.jog_size)).grid(row=1, column=0, columnspan=2, padx=UI_PADDING['MEDIUM'], pady=UI_PADDING['BUTTON_SPACING'], sticky="nsew")
-        self._add_compact_jog_button(motor_section, "←", lambda: self._jog('X', -self.jog_size)).grid(row=2, column=0, padx=UI_PADDING['MEDIUM'], pady=UI_PADDING['BUTTON_SPACING'], sticky="nsew")
-        self._add_compact_jog_button(motor_section, "→", lambda: self._jog('X', +self.jog_size)).grid(row=2, column=1, padx=UI_PADDING['MEDIUM'], pady=UI_PADDING['BUTTON_SPACING'], sticky="nsew")
-        self._add_compact_jog_button(motor_section, "↓", lambda: self._jog('Y', -self.jog_size)).grid(row=3, column=0, columnspan=2, padx=UI_PADDING['MEDIUM'], pady=UI_PADDING['BUTTON_SPACING'], sticky="nsew")
+        self._add_compact_jog_button(motor_section, "▲", lambda: self._jog('Y', +self.jog_size)).grid(row=1, column=0, columnspan=2, padx=UI_PADDING['MEDIUM'], pady=UI_PADDING['BUTTON_SPACING'], sticky="nsew")
+        self._add_compact_jog_button(motor_section, "◀", lambda: self._jog('X', -self.jog_size)).grid(row=2, column=0, padx=UI_PADDING['MEDIUM'], pady=UI_PADDING['BUTTON_SPACING'], sticky="nsew")
+        self._add_compact_jog_button(motor_section, "▶", lambda: self._jog('X', +self.jog_size)).grid(row=2, column=1, padx=UI_PADDING['MEDIUM'], pady=UI_PADDING['BUTTON_SPACING'], sticky="nsew")
+        self._add_compact_jog_button(motor_section, "▼", lambda: self._jog('Y', -self.jog_size)).grid(row=3, column=0, columnspan=2, padx=UI_PADDING['MEDIUM'], pady=UI_PADDING['BUTTON_SPACING'], sticky="nsew")
         
         # Z and A controls - now using jog_size with better spacing
         self._add_compact_jog_button(motor_section, "Z+", lambda: self._jog('Z', +self.jog_size)).grid(row=4, column=0, padx=UI_PADDING['MEDIUM'], pady=UI_PADDING['BUTTON_SPACING'], sticky="nsew")
@@ -777,26 +777,26 @@ class FabricCNCApp:
         self._add_compact_jog_button(motor_section, "A-", lambda: self._jog('A', -self.jog_size)).grid(row=5, column=1, padx=UI_PADDING['MEDIUM'], pady=UI_PADDING['BUTTON_SPACING'], sticky="nsew")
         
         # Jog size slider
-        ctk.CTkLabel(motor_section, text="Jog Size:", font=("Arial", 13, "bold"), text_color=UI_COLORS['PRIMARY_COLOR']).grid(row=6, column=0, columnspan=2, pady=(UI_PADDING['MEDIUM'], UI_PADDING['SMALL']), padx=UI_PADDING['MEDIUM'])
+        ctk.CTkLabel(motor_section, text="Jog Size:", font=("Arial", 18, "bold"), text_color=UI_COLORS['PRIMARY_COLOR']).grid(row=6, column=0, columnspan=2, pady=(UI_PADDING['MEDIUM'], UI_PADDING['SMALL']), padx=UI_PADDING['MEDIUM'])
         jog_slider = ctk.CTkSlider(motor_section, from_=1, to=100, number_of_steps=99, command=self._on_jog_slider)
         jog_slider.grid(row=7, column=0, columnspan=2, padx=UI_PADDING['MEDIUM'], pady=UI_PADDING['BUTTON_SPACING'], sticky="ew")
         jog_slider.set(20)  # Set to 1.0 inch (20 * 0.05)
         
         # Jog size value display
-        self.jog_size_label = ctk.CTkLabel(motor_section, text="1.00 in", font=("Arial", 13, "bold"), text_color=UI_COLORS['ON_SURFACE'])
+        self.jog_size_label = ctk.CTkLabel(motor_section, text="1.00 in", font=("Arial", 14, "bold"), text_color=UI_COLORS['ON_SURFACE'])
         self.jog_size_label.grid(row=8, column=0, columnspan=2, pady=UI_PADDING['BUTTON_SPACING'])
         
         # Initialize slider to sync all jog size variables
         self._on_jog_slider(20)
         
         # Z lower limit slider
-        ctk.CTkLabel(motor_section, text="Z Lower Limit:", font=("Arial", 13, "bold"), text_color=UI_COLORS['PRIMARY_COLOR']).grid(row=9, column=0, columnspan=2, pady=(UI_PADDING['MEDIUM'], UI_PADDING['SMALL']), padx=UI_PADDING['MEDIUM'])
+        ctk.CTkLabel(motor_section, text="Z Lower Limit:", font=("Arial", 18, "bold"), text_color=UI_COLORS['PRIMARY_COLOR']).grid(row=9, column=0, columnspan=2, pady=(UI_PADDING['MEDIUM'], UI_PADDING['SMALL']), padx=UI_PADDING['MEDIUM'])
         z_limit_slider = ctk.CTkSlider(motor_section, from_=2.0, to=3.0, number_of_steps=20, command=self._on_z_limit_slider)
         z_limit_slider.grid(row=10, column=0, columnspan=2, padx=UI_PADDING['MEDIUM'], pady=UI_PADDING['BUTTON_SPACING'], sticky="ew")
         z_limit_slider.set(2.0)  # Set to -2.0 inch (2.0 on slider)
         
         # Z lower limit value display
-        self.z_limit_label = ctk.CTkLabel(motor_section, text="-2.00 in", font=("Arial", 13, "bold"), text_color=UI_COLORS['ON_SURFACE'])
+        self.z_limit_label = ctk.CTkLabel(motor_section, text="-2.00 in", font=("Arial", 14, "bold"), text_color=UI_COLORS['ON_SURFACE'])
         self.z_limit_label.grid(row=11, column=0, columnspan=2, pady=UI_PADDING['BUTTON_SPACING'])
         
         # Initialize Z limit slider to sync all variables
@@ -1735,40 +1735,51 @@ class FabricCNCApp:
             self.status_label.configure(text=self._truncate_status(f"Load failed: {str(e)}"), text_color="red")
 
     def _delete_selected_dxf(self):
-        """Delete the selected DXF file with confirmation."""
+        """Delete the selected DXF file or folder with confirmation."""
         try:
-            if not self.selected_dxf_file:
-                self.status_label.configure(text=self._truncate_status("No file selected"), text_color="orange")
+            # Check if a folder is selected in the current path
+            folder_to_delete = None
+            file_to_delete = None
+            item_name = None
+            
+            # First, check if we're currently navigated into a folder - allow deleting subfolders
+            if self.selected_dxf_file is None and self.current_pattern_path != self.dxf_files_dir:
+                # We're in a subfolder, so allow deleting the current folder
+                folder_to_delete = self.current_pattern_path
+                item_name = os.path.basename(self.current_pattern_path)
+            elif self.selected_dxf_file:
+                # File is selected, delete the file
+                file_to_delete = self.selected_dxf_file
+                item_name = self.selected_dxf_file
+            else:
+                self.status_label.configure(text=self._truncate_status("No file or folder selected"), text_color="orange")
                 return
             
             # Show confirmation dialog
+            item_type = "folder" if folder_to_delete else "file"
             response = messagebox.askyesno(
-                "Delete File",
-                f"Delete '{self.selected_dxf_file}'?\nThis action cannot be undone.",
+                f"Delete {item_type.capitalize()}",
+                f"Delete '{item_name}'?\nThis action cannot be undone.",
                 icon=messagebox.WARNING
             )
             
             if not response:
                 return
             
-            # Find and delete the file
-            file_path = None
-            if self.selected_dxf_folder:
-                candidate = os.path.join(self.selected_dxf_folder, self.selected_dxf_file)
-                if os.path.exists(candidate):
-                    file_path = candidate
-            
-            # Fallback: search in all pattern folders
-            if not file_path:
-                for root, dirs, files in os.walk(self.dxf_files_dir):
-                    if self.selected_dxf_file in files:
-                        file_path = os.path.join(root, self.selected_dxf_file)
-                        break
-            
-            if file_path and os.path.exists(file_path):
-                os.remove(file_path)
-                logger.info(f"Deleted DXF file: {file_path}")
-                self.status_label.configure(text=self._truncate_status(f"Deleted: {self.selected_dxf_file}"), text_color="green")
+            # Delete the folder or file
+            if folder_to_delete:
+                # Delete folder and all its contents
+                import shutil
+                shutil.rmtree(folder_to_delete)
+                logger.info(f"Deleted folder: {folder_to_delete}")
+                self.status_label.configure(text=self._truncate_status(f"Deleted: {item_name}"), text_color="green")
+                
+                # Navigate up one level
+                parent = os.path.dirname(self.current_pattern_path)
+                if parent != self.current_pattern_path and os.path.isdir(parent):
+                    self.current_pattern_path = parent
+                else:
+                    self.current_pattern_path = self.dxf_files_dir
                 
                 # Clear selection and processed data
                 self.selected_dxf_file = None
@@ -1779,11 +1790,41 @@ class FabricCNCApp:
                 # Refresh the file list and canvas
                 self._refresh_dxf_files_list()
                 self._schedule_canvas_redraw()
-            else:
-                self.status_label.configure(text=self._truncate_status("File not found"), text_color="red")
+            
+            elif file_to_delete:
+                # Find and delete the file
+                file_path = None
+                if self.selected_dxf_folder:
+                    candidate = os.path.join(self.selected_dxf_folder, file_to_delete)
+                    if os.path.exists(candidate):
+                        file_path = candidate
+                
+                # Fallback: search in all pattern folders
+                if not file_path:
+                    for root, dirs, files in os.walk(self.dxf_files_dir):
+                        if file_to_delete in files:
+                            file_path = os.path.join(root, file_to_delete)
+                            break
+                
+                if file_path and os.path.exists(file_path):
+                    os.remove(file_path)
+                    logger.info(f"Deleted DXF file: {file_path}")
+                    self.status_label.configure(text=self._truncate_status(f"Deleted: {file_to_delete}"), text_color="green")
+                    
+                    # Clear selection and processed data
+                    self.selected_dxf_file = None
+                    self.selected_dxf_folder = None
+                    self.processed_shapes = []
+                    self.dxf_file_path = ""
+                    
+                    # Refresh the file list and canvas
+                    self._refresh_dxf_files_list()
+                    self._schedule_canvas_redraw()
+                else:
+                    self.status_label.configure(text=self._truncate_status("File not found"), text_color="red")
                 
         except Exception as e:
-            logger.error(f"Failed to delete DXF file: {e}")
+            logger.error(f"Failed to delete: {e}")
             self.status_label.configure(text=self._truncate_status(f"Delete failed: {str(e)}"), text_color="red")
 
     def _get_dxf_extents_inches(self):
@@ -2302,7 +2343,7 @@ class FabricCNCApp:
 
     def _add_compact_jog_button(self, parent, text, cmd):
         # Compact version with consistent font styling
-        btn = ctk.CTkButton(parent, text=text, command=cmd, width=60, height=45, fg_color=UI_COLORS['BUTTON_PRIMARY'], text_color=UI_COLORS['BUTTON_TEXT'], hover_color=UI_COLORS['BUTTON_PRIMARY_HOVER'], corner_radius=8, font=("Arial", 16, "bold"))
+        btn = ctk.CTkButton(parent, text=text, command=cmd, width=60, height=45, fg_color=UI_COLORS['BUTTON_PRIMARY'], text_color=UI_COLORS['BUTTON_TEXT'], hover_color=UI_COLORS['BUTTON_PRIMARY_HOVER'], corner_radius=8, font=("Arial", 24, "bold"))
         return btn
 
     def _create_stylish_button(self, parent, text, command, button_type="primary", **kwargs):
