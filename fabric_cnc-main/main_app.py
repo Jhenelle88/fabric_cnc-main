@@ -124,9 +124,9 @@ class SimulatedMotorController:
 
     def _clamp(self, axis, value):
         if axis == 'X':
-            return max(-35.0, min(value, 35.0))  # 35 inches max X travel
+            return max(-config.APP_CONFIG['X_MAX_INCH'], min(value, config.APP_CONFIG['X_MAX_INCH']))
         elif axis == 'Y':
-            return max(-60.0, min(value, 60.0))  # 60 inches max Y travel
+            return max(-config.APP_CONFIG['Y_MAX_INCH'], min(value, config.APP_CONFIG['Y_MAX_INCH']))
         elif axis == 'Z':
             return max(-3.0, min(value, 0.0))  # Z: -3.0 to 0.0 inches (main app handles runtime limit)
         elif axis == 'A':
@@ -214,9 +214,9 @@ class RealMotorController:
 
     def _clamp(self, axis, value):
         if axis == 'X':
-            return max(-60.0, min(value, 60.0))  # 60 inches max X travel
+            return max(-config.APP_CONFIG['X_MAX_INCH'], min(value, config.APP_CONFIG['X_MAX_INCH']))
         elif axis == 'Y':
-            return max(-35.0, min(value, 35.0))  # 35 inches max Y travel
+            return max(-config.APP_CONFIG['Y_MAX_INCH'], min(value, config.APP_CONFIG['Y_MAX_INCH']))
         elif axis == 'Z':
             return max(-3.0, min(value, 0.0))  # Z: -3.0 to 0.0 inches (main app handles runtime limit)
         elif axis == 'A':
@@ -720,15 +720,45 @@ class FabricCNCApp:
         # Setup canvas in center column
         self.canvas = ctk.CTkCanvas(self.center_column, bg=UI_COLORS['SURFACE'], highlightthickness=0)
         self.canvas.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
+
+        # Zoom controls - vertical stack at right side of working area
+        self.zoom_controls = ctk.CTkFrame(self.center_column, fg_color="transparent")
+        self.zoom_controls.place(relx=0.985, rely=0.5, anchor='e')
+
+        zoom_in_btn = ctk.CTkButton(self.zoom_controls, text="🔍+", command=self._zoom_in,
+                       fg_color=UI_COLORS['BUTTON_PRIMARY'], text_color=UI_COLORS['BUTTON_TEXT'], hover_color=UI_COLORS['BUTTON_PRIMARY_HOVER'],
+                       width=45, height=45, font=("Arial", 16, "bold"), corner_radius=8)
+        zoom_in_btn.pack(pady=(0, 8))
+
+        zoom_out_btn = ctk.CTkButton(self.zoom_controls, text="🔍-", command=self._zoom_out,
+                       fg_color=UI_COLORS['BUTTON_PRIMARY'], text_color=UI_COLORS['BUTTON_TEXT'], hover_color=UI_COLORS['BUTTON_PRIMARY_HOVER'],
+                       width=45, height=45, font=("Arial", 16, "bold"), corner_radius=8)
+        zoom_out_btn.pack(pady=(0, 8))
+
+        fullscreen_btn = ctk.CTkButton(self.zoom_controls, text="⛶", command=self._open_fullscreen_canvas,
+                         fg_color=UI_COLORS['BUTTON_PRIMARY'], text_color=UI_COLORS['BUTTON_TEXT'], hover_color=UI_COLORS['BUTTON_PRIMARY_HOVER'],
+                         width=45, height=45, font=("Arial", 16, "bold"), corner_radius=8)
+        fullscreen_btn.pack()
         
         # Bind canvas resize
         self.center_column.bind("<Configure>", self._on_canvas_resize)
+        self.canvas.bind("<ButtonPress-1>", self._pan_start)
+        self.canvas.bind("<B1-Motion>", self._pan_move)
+        self.canvas.bind("<ButtonRelease-1>", self._pan_end)
+        self.canvas.bind("<MouseWheel>", self._on_mouse_wheel_zoom)
+        self.canvas.bind("<Button-4>", self._on_mouse_wheel_zoom_linux)
+        self.canvas.bind("<Button-5>", self._on_mouse_wheel_zoom_linux)
         
         # Initialize canvas dimensions
         self.canvas_width = 800  # Default, will be updated by resize
         self.canvas_height = 600  # Default, will be updated by resize
         self.canvas_scale = 1.0
         self.canvas_offset = (0, 0)
+
+        # Zoom and pan state
+        self.zoom_level = 1.0
+        self.pan_offset = (0.0, 0.0)
+        self._pan_start_pos = None
         
         # Defer initial canvas draw to speed up startup
         self.root.after(100, self._schedule_canvas_redraw)
@@ -956,8 +986,8 @@ class FabricCNCApp:
         # Draw current tool head position (all axes)
         if pos is None:
             pos = self.motor_ctrl.get_position()
-        x_max_inches = 60.0  # 60 inches max X travel
-        y_max_inches = 35.0  # 35 inches max Y travel
+        x_max_inches = config.APP_CONFIG['X_MAX_INCH']
+        y_max_inches = config.APP_CONFIG['Y_MAX_INCH']
         x = max(0.0, min(pos['X'], x_max_inches))
         y = max(0.0, min(pos['Y'], y_max_inches))
         clamped_pos = {'X': x, 'Y': y}
@@ -1036,8 +1066,8 @@ class FabricCNCApp:
         inch_tick = 5
         
         # Configure plot dimensions from config file
-        plot_width_in = 60.0  # 60 inches work area width
-        plot_height_in = 35.0  # 35 inches work area height
+        plot_width_in = config.APP_CONFIG['X_MAX_INCH']
+        plot_height_in = config.APP_CONFIG['Y_MAX_INCH']
         
         # Get buffer from config file
         buffer_px = config.APP_CONFIG['PLOT_BUFFER_PX']
@@ -1058,23 +1088,21 @@ class FabricCNCApp:
         ox = (self.canvas_width - plot_width_in * scale) / 2
         oy = (self.canvas_height - plot_height_in * scale) / 2
         
-        # Draw plot area border
+        # Base plot area (used for static grid/labels)
         plot_left = ox
         plot_top = oy
         plot_right = ox + plot_width_in * scale
         plot_bottom = oy + plot_height_in * scale
-        self.canvas.create_rectangle(plot_left, plot_top, plot_right, plot_bottom, 
-                                   outline="#800000", width=2)
         
         # Draw light gridlines every 5 inches
         for x_in in range(0, int(plot_width_in) + 1, inch_tick):
-            x_px, y_px = self._inches_to_canvas(x_in, 0)
+            x_px, y_px = self._inches_to_canvas(x_in, 0, apply_zoom=False)
             # Draw vertical gridline
             self.canvas.create_line(x_px, plot_top, x_px, plot_bottom, 
                                    fill="#E0E0E0", width=1)
         
         for y_in in range(0, int(plot_height_in) + 1, inch_tick):
-            x_px, y_px = self._inches_to_canvas(0, y_in)
+            x_px, y_px = self._inches_to_canvas(0, y_in, apply_zoom=False)
             # Draw horizontal gridline
             self.canvas.create_line(plot_left, y_px, plot_right, y_px, 
                                    fill="#E0E0E0", width=1)
@@ -1084,21 +1112,21 @@ class FabricCNCApp:
         
         # X-axis tick marks (bottom of plot)
         for x_in in range(0, int(plot_width_in) + 1, inch_tick):
-            x_px, y_px = self._inches_to_canvas(x_in, 0)
+            x_px, y_px = self._inches_to_canvas(x_in, 0, apply_zoom=False)
             # Draw tick mark pointing down from the plot bottom
             self.canvas.create_line(x_px, plot_bottom, x_px, plot_bottom + tick_length, 
                                    fill="#000000", width=2)
         
         # Y-axis tick marks (left side of plot)
         for y_in in range(0, int(plot_height_in) + 1, inch_tick):
-            x_px, y_px = self._inches_to_canvas(0, y_in)
+            x_px, y_px = self._inches_to_canvas(0, y_in, apply_zoom=False)
             # Draw tick mark pointing left from the plot left edge
             self.canvas.create_line(plot_left, y_px, plot_left - tick_length, y_px, 
                                    fill="#000000", width=2)
         
         # Draw X-axis numbers (just below the plot area) - no boxes
         for x_in in range(0, int(plot_width_in) + 1, inch_tick):
-            x_px, y_px = self._inches_to_canvas(x_in, 0)
+            x_px, y_px = self._inches_to_canvas(x_in, 0, apply_zoom=False)
             # Draw number just below the plot area
             label_y = plot_bottom + 15
             if label_y < self.canvas_height - 10:
@@ -1108,7 +1136,7 @@ class FabricCNCApp:
         
         # Draw Y-axis numbers (just to the left of the plot area) - no boxes
         for y_in in range(0, int(plot_height_in) + 1, inch_tick):
-            x_px, y_px = self._inches_to_canvas(0, y_in)
+            x_px, y_px = self._inches_to_canvas(0, y_in, apply_zoom=False)
             # Draw number just to the left of the plot area
             label_x = plot_left - 15
             if label_x > 10:
@@ -1116,11 +1144,21 @@ class FabricCNCApp:
                 self.canvas.create_text(label_x, y_px, text=f"{y_in}", 
                                       fill="#000000", font=("Arial", 10, "bold"), anchor="e")
 
-    def _inches_to_canvas(self, x_in, y_in):
+        # Draw plot area border (zoomed with image/toolpath)
+        x0, y0 = self._inches_to_canvas(0, 0, apply_zoom=True)
+        x1, y1 = self._inches_to_canvas(plot_width_in, plot_height_in, apply_zoom=True)
+        frame_left = min(x0, x1)
+        frame_right = max(x0, x1)
+        frame_top = min(y0, y1)
+        frame_bottom = max(y0, y1)
+        self.canvas.create_rectangle(frame_left, frame_top, frame_right, frame_bottom, 
+                                   outline="#800000", width=2)
+
+    def _inches_to_canvas(self, x_in, y_in, apply_zoom=True):
         # Convert inches to canvas coordinates with home at bottom-left
         # Configure plot dimensions from config file
-        plot_width_in = 60.0  # 60 inches work area width
-        plot_height_in = 35.0  # 35 inches work area height
+        plot_width_in = config.APP_CONFIG['X_MAX_INCH']
+        plot_height_in = config.APP_CONFIG['Y_MAX_INCH']
         
         # Get buffer from config file
         buffer_px = config.APP_CONFIG['PLOT_BUFFER_PX']
@@ -1142,10 +1180,26 @@ class FabricCNCApp:
         oy = (self.canvas_height - plot_height_in * scale) / 2
         
         # Y coordinate: 0 at bottom, plot_height_in at top (Tkinter Y is top-down)
-        y_canvas = (plot_height_in - y_in) * scale + oy
-        x_canvas = x_in * scale + ox
-        
-        return x_canvas, y_canvas
+        y_base = (plot_height_in - y_in) * scale + oy
+        x_base = x_in * scale + ox
+
+        if not apply_zoom or not hasattr(self, 'zoom_level'):
+            return x_base, y_base
+
+        # Center of canvas
+        center_x = self.canvas_width / 2
+        center_y = self.canvas_height / 2
+
+        # Apply zoom around the center
+        x_zoomed = center_x + (x_base - center_x) * self.zoom_level
+        y_zoomed = center_y + (y_base - center_y) * self.zoom_level
+
+        # Apply pan if available
+        pan_offset = getattr(self, 'pan_offset', (0.0, 0.0))
+        x_final = x_zoomed + pan_offset[0]
+        y_final = y_zoomed + pan_offset[1]
+
+        return x_final, y_final
 
     def _draw_tool_head_inches(self, pos):
         # Draw a small circle at the current tool head position (in inches)
@@ -1164,6 +1218,86 @@ class FabricCNCApp:
         self.canvas.create_text(x_c, y_c - r - 15, text=f"(X={x_in:.2f}, Y={y_in:.2f})", fill=UI_COLORS['PRIMARY_VARIANT'], font=("Arial", 10, "bold"))
         
         # Tool head position updated
+
+    def _zoom_in(self):
+        """Zoom in the canvas view."""
+        self._zoom_at(1.2, keep_center=True)
+
+    def _zoom_out(self):
+        """Zoom out the canvas view."""
+        self._zoom_at(1 / 1.2, keep_center=True)
+
+    def _reset_zoom(self):
+        """Reset zoom and pan to default."""
+        self.zoom_level = 1.0
+        self.pan_offset = (0.0, 0.0)
+        self._schedule_canvas_redraw()
+
+    def _zoom_at(self, factor, screen_x=None, screen_y=None, keep_center=False):
+        """Zoom around a specific screen point or keep centered."""
+        new_zoom = self.zoom_level * factor
+        if new_zoom < 1.0:
+            new_zoom = 1.0
+        if new_zoom > 6.0:
+            new_zoom = 6.0
+
+        if abs(new_zoom - self.zoom_level) < 1e-6:
+            return
+
+        self.zoom_level = new_zoom
+
+        if keep_center or screen_x is None or screen_y is None:
+            self.pan_offset = (0.0, 0.0)
+            self._schedule_canvas_redraw()
+            return
+
+        center_x = self.canvas_width / 2
+        center_y = self.canvas_height / 2
+
+        base_x = (screen_x - self.pan_offset[0] - center_x) / (self.zoom_level / factor) + center_x
+        base_y = (screen_y - self.pan_offset[1] - center_y) / (self.zoom_level / factor) + center_y
+
+        self.pan_offset = (
+            screen_x - center_x - (base_x - center_x) * self.zoom_level,
+            screen_y - center_y - (base_y - center_y) * self.zoom_level
+        )
+
+        self._schedule_canvas_redraw()
+
+    def _on_mouse_wheel_zoom(self, event):
+        """Zoom using mouse wheel / touchpad gesture."""
+        if event.delta > 0:
+            factor = 1.1
+        else:
+            factor = 1 / 1.1
+        self._zoom_at(factor, keep_center=True)
+
+    def _on_mouse_wheel_zoom_linux(self, event):
+        """Linux mouse wheel zoom support."""
+        if event.num == 4:
+            factor = 1.1
+        else:
+            factor = 1 / 1.1
+        self._zoom_at(factor, keep_center=True)
+
+    def _pan_start(self, event):
+        """Start panning the canvas."""
+        self._pan_start_pos = (event.x, event.y)
+        self.canvas.config(cursor="fleur")
+
+    def _pan_move(self, event):
+        """Move the canvas while panning."""
+        if self._pan_start_pos:
+            dx = event.x - self._pan_start_pos[0]
+            dy = event.y - self._pan_start_pos[1]
+            self.pan_offset = (self.pan_offset[0] + dx, self.pan_offset[1] + dy)
+            self._pan_start_pos = (event.x, event.y)
+            self._schedule_canvas_redraw()
+
+    def _pan_end(self, event):
+        """End panning."""
+        self._pan_start_pos = None
+        self.canvas.config(cursor="")
 
     def _draw_dxf_entities_inches(self):
         # Draw DXF entities, converting mm to inches for plotting
@@ -2266,8 +2400,14 @@ class FabricCNCApp:
             )
         
         # Check if coordinates are within machine limits
-        if abs(x_in) > 60.0 or abs(y_in) > 35.0:
-            logger.warning(f"Coordinates beyond machine limits! X={x_in:.2f}in (limit: ±60.0in), Y={y_in:.2f}in (limit: ±35.0in)")
+        if abs(x_in) > config.APP_CONFIG['X_MAX_INCH'] or abs(y_in) > config.APP_CONFIG['Y_MAX_INCH']:
+            logger.warning(
+                "Coordinates beyond machine limits! X=%0.2fin (limit: ±%0.1fin), Y=%0.2fin (limit: ±%0.1fin)",
+                x_in,
+                config.APP_CONFIG['X_MAX_INCH'],
+                y_in,
+                config.APP_CONFIG['Y_MAX_INCH']
+            )
         
         # Update position tracking and schedule canvas redraw
         self._last_position = self.motor_ctrl.get_position().copy()

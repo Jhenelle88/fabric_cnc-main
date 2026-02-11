@@ -124,9 +124,9 @@ class SimulatedMotorController:
 
     def _clamp(self, axis, value):
         if axis == 'X':
-            return max(-35.0, min(value, 35.0))  # 35 inches max X travel
+            return max(-config.APP_CONFIG['X_MAX_INCH'], min(value, config.APP_CONFIG['X_MAX_INCH']))
         elif axis == 'Y':
-            return max(-60.0, min(value, 60.0))  # 60 inches max Y travel
+            return max(-config.APP_CONFIG['Y_MAX_INCH'], min(value, config.APP_CONFIG['Y_MAX_INCH']))
         elif axis == 'Z':
             return max(-3.0, min(value, 0.0))  # Z: -3.0 to 0.0 inches (main app handles runtime limit)
         elif axis == 'A':
@@ -214,9 +214,9 @@ class RealMotorController:
 
     def _clamp(self, axis, value):
         if axis == 'X':
-            return max(-60.0, min(value, 60.0))  # 60 inches max X travel
+            return max(-config.APP_CONFIG['X_MAX_INCH'], min(value, config.APP_CONFIG['X_MAX_INCH']))
         elif axis == 'Y':
-            return max(-35.0, min(value, 35.0))  # 35 inches max Y travel
+            return max(-config.APP_CONFIG['Y_MAX_INCH'], min(value, config.APP_CONFIG['Y_MAX_INCH']))
         elif axis == 'Z':
             return max(-3.0, min(value, 0.0))  # Z: -3.0 to 0.0 inches (main app handles runtime limit)
         elif axis == 'A':
@@ -714,21 +714,53 @@ class FabricCNCApp:
         self.center_column.grid(row=0, column=1, sticky="nsew", padx=UI_PADDING['SMALL'], pady=UI_PADDING['SMALL'])
         
         # Configure center column to expand in both directions
-        self.center_column.grid_rowconfigure(0, weight=1)
+        self.center_column.grid_rowconfigure(1, weight=1)
         self.center_column.grid_columnconfigure(0, weight=1)
-        
+
         # Setup canvas in center column
         self.canvas = ctk.CTkCanvas(self.center_column, bg=UI_COLORS['SURFACE'], highlightthickness=0)
-        self.canvas.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
+        self.canvas.grid(row=1, column=0, sticky="nsew", padx=0, pady=0)
+        
+        # Zoom controls - vertical stack at right side of working area
+        self.zoom_controls = ctk.CTkFrame(self.center_column, fg_color="transparent")
+        self.zoom_controls.place(relx=0.985, rely=0.5, anchor='e')
+
+        zoom_in_btn = ctk.CTkButton(self.zoom_controls, text="🔍+", command=self._zoom_in,
+                       fg_color=UI_COLORS['BUTTON_PRIMARY'], text_color=UI_COLORS['BUTTON_TEXT'], hover_color=UI_COLORS['BUTTON_PRIMARY_HOVER'],
+                       width=45, height=45, font=("Arial", 16, "bold"), corner_radius=8)
+        zoom_in_btn.pack(pady=(0, 8))
+
+        zoom_out_btn = ctk.CTkButton(self.zoom_controls, text="🔍-", command=self._zoom_out,
+                       fg_color=UI_COLORS['BUTTON_PRIMARY'], text_color=UI_COLORS['BUTTON_TEXT'], hover_color=UI_COLORS['BUTTON_PRIMARY_HOVER'],
+                       width=45, height=45, font=("Arial", 16, "bold"), corner_radius=8)
+        zoom_out_btn.pack(pady=(0, 8))
+
+        fullscreen_btn = ctk.CTkButton(self.zoom_controls, text="⛶", command=self._open_fullscreen_canvas,
+                         fg_color=UI_COLORS['BUTTON_PRIMARY'], text_color=UI_COLORS['BUTTON_TEXT'], hover_color=UI_COLORS['BUTTON_PRIMARY_HOVER'],
+                         width=45, height=45, font=("Arial", 16, "bold"), corner_radius=8)
+        fullscreen_btn.pack()
         
         # Bind canvas resize
         self.center_column.bind("<Configure>", self._on_canvas_resize)
+        self.canvas.bind("<ButtonPress-1>", self._pan_start)
+        self.canvas.bind("<B1-Motion>", self._pan_move)
+        self.canvas.bind("<ButtonRelease-1>", self._pan_end)
+        self.canvas.bind("<MouseWheel>", self._on_mouse_wheel_zoom)
+        self.canvas.bind("<Button-4>", self._on_mouse_wheel_zoom_linux)
+        self.canvas.bind("<Button-5>", self._on_mouse_wheel_zoom_linux)
+        
         
         # Initialize canvas dimensions
         self.canvas_width = 800  # Default, will be updated by resize
         self.canvas_height = 600  # Default, will be updated by resize
         self.canvas_scale = 1.0
         self.canvas_offset = (0, 0)
+
+        # Zoom and pan state
+        self.zoom_level = 1.0
+        self.pan_offset = (0.0, 0.0)  # Pan offset in pixels
+        self._pan_start_pos = None
+        
         
         # Defer initial canvas draw to speed up startup
         self.root.after(100, self._schedule_canvas_redraw)
@@ -820,6 +852,42 @@ class FabricCNCApp:
         
         self.coord_label = ctk.CTkLabel(coord_section, text="", font=("Consolas", 13, "bold"), text_color=UI_COLORS['ON_SURFACE'])
         self.coord_label.pack(pady=UI_PADDING['SMALL'])
+
+    def _open_fullscreen_canvas(self):
+        """Open a new window with a fullscreen canvas."""
+        fullscreen_window = ctk.CTkToplevel(self.root)
+        fullscreen_window.title("Fullscreen Canvas")
+        fullscreen_window.attributes('-fullscreen', True)
+        fullscreen_window.grab_set()
+
+        # Canvas
+        fullscreen_canvas = ctk.CTkCanvas(fullscreen_window, bg=UI_COLORS['SURFACE'], highlightthickness=0)
+        fullscreen_canvas.pack(fill="both", expand=True)
+
+        # Close button directly on window
+        close_button = ctk.CTkButton(fullscreen_window, text="✕",
+                                   command=fullscreen_window.destroy,
+                                   fg_color=UI_COLORS['SURFACE'],
+                                   text_color="black",
+                                   hover_color=UI_COLORS['SURFACE'],
+                                   corner_radius=0,
+                                   width=30,
+                                   height=30,
+                                   font=("Arial", 16, "bold"))
+        close_button.place(relx=0.98, rely=0.02, anchor='ne')
+
+        def _draw_on_fullscreen(event=None):
+            width = fullscreen_window.winfo_width()
+            height = fullscreen_window.winfo_height()
+            if width > 1 and height > 1: # Ensure window is drawn
+                self._draw_canvas_content(fullscreen_canvas, width, height)
+
+        fullscreen_window.bind("<Configure>", _draw_on_fullscreen)
+        fullscreen_window.after(50, _draw_on_fullscreen) # Initial draw
+        
+        # Bind Escape key to close fullscreen window
+        fullscreen_window.bind('<KeyPress-Escape>', lambda e: fullscreen_window.destroy())
+
 
     def _bind_arrow_keys(self):
         self.root.bind('<KeyPress-Left>', lambda e: self._on_arrow_press('Left'))
@@ -930,40 +998,40 @@ class FabricCNCApp:
     def _draw_canvas_debounced(self, pos=None):
         """Debounced canvas redraw that only executes once per idle cycle."""
         self._canvas_redraw_pending = False
-        self._draw_canvas(pos)
-    
-    def _draw_canvas(self, pos=None):
-        self.canvas.delete("all")
+        self._draw_canvas_content(self.canvas, self.canvas_width, self.canvas_height, pos)
+
+    def _draw_canvas_content(self, canvas, canvas_width, canvas_height, pos=None):
+        canvas.delete("all")
         # Draw axes in inches
-        self._draw_axes_in_inches()
+        self._draw_axes_in_inches(canvas, canvas_width, canvas_height)
         
         # Draw processed shapes from new DXF processor
         if self.processed_shapes:
-            self._draw_processed_shapes()
+            self._draw_processed_shapes(canvas, canvas_width, canvas_height)
         
         # Draw legacy DXF entities if loaded
         if self.dxf_doc and self.dxf_entities:
-            self._draw_dxf_entities_inches()
+            self._draw_dxf_entities_inches(canvas, canvas_width, canvas_height)
         
         # Draw toolpath if generated
         if self.toolpath:
-            self._draw_toolpath_inches()
+            self._draw_toolpath_inches(canvas, canvas_width, canvas_height)
         
         # Draw new toolpath preview if available
         if hasattr(self, 'toolpath_data') and self.toolpath_data:
-            self._draw_toolpath_inches()
+            self._draw_toolpath_inches(canvas, canvas_width, canvas_height)
         
         # Draw current tool head position (all axes)
         if pos is None:
             pos = self.motor_ctrl.get_position()
-        x_max_inches = 60.0  # 60 inches max X travel
-        y_max_inches = 35.0  # 35 inches max Y travel
+        x_max_inches = config.APP_CONFIG['X_MAX_INCH']
+        y_max_inches = config.APP_CONFIG['Y_MAX_INCH']
         x = max(0.0, min(pos['X'], x_max_inches))
         y = max(0.0, min(pos['Y'], y_max_inches))
         clamped_pos = {'X': x, 'Y': y}
-        self._draw_tool_head_inches(clamped_pos)
+        self._draw_tool_head_inches(canvas, canvas_width, canvas_height, clamped_pos)
 
-    def _draw_processed_shapes(self):
+    def _draw_processed_shapes(self, canvas, canvas_width, canvas_height):
         """Draw processed shapes from the new DXF processor."""
         if not self.processed_shapes:
             return
@@ -998,19 +1066,19 @@ class FabricCNCApp:
             # Convert points to canvas coordinates
             canvas_points = []
             for x_in, y_in in points:
-                x_canvas, y_canvas = self._inches_to_canvas(x_in, y_in)
+                x_canvas, y_canvas = self._inches_to_canvas(x_in, y_in, canvas_width, canvas_height)
                 canvas_points.extend([x_canvas, y_canvas])
             
             # Draw the shape as a polyline
             if len(canvas_points) >= 4:  # Need at least 2 points (4 coordinates)
-                self.canvas.create_line(canvas_points, 
+                canvas.create_line(canvas_points, 
                                       fill=color, 
                                       width=2)
                 
                 # Draw shape name at the first point
                 if canvas_points:
                     x_canvas, y_canvas = canvas_points[0], canvas_points[1]
-                    self.canvas.create_text(x_canvas + 10, y_canvas - 10, 
+                    canvas.create_text(x_canvas + 10, y_canvas - 10, 
                                           text=shape_name, 
                                           fill=color,
                                           font=("Arial", 8, "bold"))
@@ -1030,22 +1098,22 @@ class FabricCNCApp:
         # Redraw the canvas with new settings
         self._schedule_canvas_redraw()
 
-    def _draw_axes_in_inches(self):
+    def _draw_axes_in_inches(self, canvas, canvas_width, canvas_height):
         # Draw full-height canvas with gridlines and numbers
         # Use 5-inch spacing for gridlines and numbers
         inch_tick = 5
         
         # Configure plot dimensions from config file
-        plot_width_in = 60.0  # 60 inches work area width
-        plot_height_in = 35.0  # 35 inches work area height
+        plot_width_in = config.APP_CONFIG['X_MAX_INCH']
+        plot_height_in = config.APP_CONFIG['Y_MAX_INCH']
         
         # Get buffer from config file
         buffer_px = config.APP_CONFIG['PLOT_BUFFER_PX']
         
         # Calculate scale to make plot fit within canvas with buffer
         # Account for buffer on all sides
-        available_height_px = self.canvas_height - (2 * buffer_px)
-        available_width_px = self.canvas_width - (2 * buffer_px)
+        available_height_px = canvas_height - (2 * buffer_px)
+        available_width_px = canvas_width - (2 * buffer_px)
         
         # Calculate scales for both dimensions
         scale_y = available_height_px / plot_height_in
@@ -1055,117 +1123,213 @@ class FabricCNCApp:
         scale = min(scale_x, scale_y)
         
         # Calculate offsets - center the plot with buffer
-        ox = (self.canvas_width - plot_width_in * scale) / 2
-        oy = (self.canvas_height - plot_height_in * scale) / 2
+        ox = (canvas_width - plot_width_in * scale) / 2
+        oy = (canvas_height - plot_height_in * scale) / 2
         
-        # Draw plot area border
+        # Base plot area (used for static grid/labels)
         plot_left = ox
         plot_top = oy
         plot_right = ox + plot_width_in * scale
         plot_bottom = oy + plot_height_in * scale
-        self.canvas.create_rectangle(plot_left, plot_top, plot_right, plot_bottom, 
-                                   outline="#800000", width=2)
         
         # Draw light gridlines every 5 inches
         for x_in in range(0, int(plot_width_in) + 1, inch_tick):
-            x_px, y_px = self._inches_to_canvas(x_in, 0)
-            # Draw vertical gridline
-            self.canvas.create_line(x_px, plot_top, x_px, plot_bottom, 
+            x_px, y_px = self._inches_to_canvas(x_in, 0, canvas_width, canvas_height, apply_zoom=False)
+            canvas.create_line(x_px, plot_top, x_px, plot_bottom, 
                                    fill="#E0E0E0", width=1)
         
         for y_in in range(0, int(plot_height_in) + 1, inch_tick):
-            x_px, y_px = self._inches_to_canvas(0, y_in)
-            # Draw horizontal gridline
-            self.canvas.create_line(plot_left, y_px, plot_right, y_px, 
+            x_px, y_px = self._inches_to_canvas(0, y_in, canvas_width, canvas_height, apply_zoom=False)
+            canvas.create_line(plot_left, y_px, plot_right, y_px, 
                                    fill="#E0E0E0", width=1)
+
+        # Draw plot area border (zoomed with image/toolpath)
+        x0, y0 = self._inches_to_canvas(0, 0, canvas_width, canvas_height, apply_zoom=True)
+        x1, y1 = self._inches_to_canvas(plot_width_in, plot_height_in, canvas_width, canvas_height, apply_zoom=True)
+        frame_left = min(x0, x1)
+        frame_right = max(x0, x1)
+        frame_top = min(y0, y1)
+        frame_bottom = max(y0, y1)
+        canvas.create_rectangle(frame_left, frame_top, frame_right, frame_bottom,
+                                   outline="#800000", width=2)
         
         # Draw tick marks on the axes
         tick_length = 8  # Length of tick marks in pixels
         
         # X-axis tick marks (bottom of plot)
         for x_in in range(0, int(plot_width_in) + 1, inch_tick):
-            x_px, y_px = self._inches_to_canvas(x_in, 0)
-            # Draw tick mark pointing down from the plot bottom
-            self.canvas.create_line(x_px, plot_bottom, x_px, plot_bottom + tick_length, 
+            x_px, y_px = self._inches_to_canvas(x_in, 0, canvas_width, canvas_height, apply_zoom=False)
+            canvas.create_line(x_px, plot_bottom, x_px, plot_bottom + tick_length, 
                                    fill="#000000", width=2)
         
         # Y-axis tick marks (left side of plot)
         for y_in in range(0, int(plot_height_in) + 1, inch_tick):
-            x_px, y_px = self._inches_to_canvas(0, y_in)
-            # Draw tick mark pointing left from the plot left edge
-            self.canvas.create_line(plot_left, y_px, plot_left - tick_length, y_px, 
+            x_px, y_px = self._inches_to_canvas(0, y_in, canvas_width, canvas_height, apply_zoom=False)
+            canvas.create_line(plot_left, y_px, plot_left - tick_length, y_px, 
                                    fill="#000000", width=2)
         
         # Draw X-axis numbers (just below the plot area) - no boxes
         for x_in in range(0, int(plot_width_in) + 1, inch_tick):
-            x_px, y_px = self._inches_to_canvas(x_in, 0)
-            # Draw number just below the plot area
+            x_px, y_px = self._inches_to_canvas(x_in, 0, canvas_width, canvas_height, apply_zoom=False)
             label_y = plot_bottom + 15
-            if label_y < self.canvas_height - 10:
-                # Draw text directly - no background box
-                self.canvas.create_text(x_px, label_y, text=f"{x_in}", 
+            if label_y < canvas_height - 10:
+                canvas.create_text(x_px, label_y, text=f"{x_in}", 
                                       fill="#000000", font=("Arial", 10, "bold"), anchor="n")
         
         # Draw Y-axis numbers (just to the left of the plot area) - no boxes
         for y_in in range(0, int(plot_height_in) + 1, inch_tick):
-            x_px, y_px = self._inches_to_canvas(0, y_in)
-            # Draw number just to the left of the plot area
+            x_px, y_px = self._inches_to_canvas(0, y_in, canvas_width, canvas_height, apply_zoom=False)
             label_x = plot_left - 15
             if label_x > 10:
-                # Draw text directly - no background box
-                self.canvas.create_text(label_x, y_px, text=f"{y_in}", 
+                canvas.create_text(label_x, y_px, text=f"{y_in}", 
                                       fill="#000000", font=("Arial", 10, "bold"), anchor="e")
 
-    def _inches_to_canvas(self, x_in, y_in):
+    def _inches_to_canvas(self, x_in, y_in, canvas_width, canvas_height, apply_zoom=True):
         # Convert inches to canvas coordinates with home at bottom-left
         # Configure plot dimensions from config file
-        plot_width_in = 60.0  # 60 inches work area width
-        plot_height_in = 35.0  # 35 inches work area height
+        plot_width_in = config.APP_CONFIG['X_MAX_INCH']
+        plot_height_in = config.APP_CONFIG['Y_MAX_INCH']
         
         # Get buffer from config file
         buffer_px = config.APP_CONFIG['PLOT_BUFFER_PX']
         
         # Calculate scale to make plot fit within canvas with buffer
         # Account for buffer on all sides
-        available_height_px = self.canvas_height - (2 * buffer_px)
-        available_width_px = self.canvas_width - (2 * buffer_px)
+        available_height_px = canvas_height - (2 * buffer_px)
+        available_width_px = canvas_width - (2 * buffer_px)
         
         # Calculate scales for both dimensions
         scale_y = available_height_px / plot_height_in
         scale_x = available_width_px / plot_width_in
         
         # Use the smaller scale to maintain aspect ratio
-        scale = min(scale_x, scale_y)
+        base_scale = min(scale_x, scale_y)
         
-        # Calculate offsets - center the plot with buffer
-        ox = (self.canvas_width - plot_width_in * scale) / 2
-        oy = (self.canvas_height - plot_height_in * scale) / 2
+        # Centering offset for zoom 1.0
+        ox = (canvas_width - plot_width_in * base_scale) / 2
+        oy = (canvas_height - plot_height_in * base_scale) / 2
         
-        # Y coordinate: 0 at bottom, plot_height_in at top (Tkinter Y is top-down)
-        y_canvas = (plot_height_in - y_in) * scale + oy
-        x_canvas = x_in * scale + ox
-        
-        return x_canvas, y_canvas
+        # Point in canvas if zoom was 1.0
+        x_base = x_in * base_scale + ox
+        y_base = (plot_height_in - y_in) * base_scale + oy
 
-    def _draw_tool_head_inches(self, pos):
+        if not apply_zoom:
+            return x_base, y_base
+
+        # Center of canvas
+        center_x = canvas_width / 2
+        center_y = canvas_height / 2
+
+        # Apply zoom around the center
+        x_zoomed = center_x + (x_base - center_x) * self.zoom_level
+        y_zoomed = center_y + (y_base - center_y) * self.zoom_level
+
+        # Apply pan
+        x_final = x_zoomed + self.pan_offset[0]
+        y_final = y_zoomed + self.pan_offset[1]
+
+        return x_final, y_final
+
+    def _draw_tool_head_inches(self, canvas, canvas_width, canvas_height, pos):
         # Draw a small circle at the current tool head position (in inches)
         # Positions are already in inches from RealMotorController.get_position()
         y_in = pos['Y']
         x_in = pos['X']
-        x_c, y_c = self._inches_to_canvas(x_in, y_in)
+        x_c, y_c = self._inches_to_canvas(x_in, y_in, canvas_width, canvas_height)
         
         # Make tool head more visible
         r = config.APP_CONFIG['TOOL_HEAD_RADIUS']  # Larger radius
         # Draw outer circle (background)
-        self.canvas.create_oval(x_c - r - 2, y_c - r - 2, x_c + r + 2, y_c + r + 2, fill=UI_COLORS['PRIMARY_COLOR'], outline=UI_COLORS['PRIMARY_COLOR'], width=1)
+        canvas.create_oval(x_c - r - 2, y_c - r - 2, x_c + r + 2, y_c + r + 2, fill=UI_COLORS['PRIMARY_COLOR'], outline=UI_COLORS['PRIMARY_COLOR'], width=1)
         # Draw inner circle (tool head)
-        self.canvas.create_oval(x_c - r, y_c - r, x_c + r, y_c + r, fill=UI_COLORS['SECONDARY_COLOR'], outline=UI_COLORS['PRIMARY_COLOR'], width=2)
+        canvas.create_oval(x_c - r, y_c - r, x_c + r, y_c + r, fill=UI_COLORS['SECONDARY_COLOR'], outline=UI_COLORS['PRIMARY_COLOR'], width=2)
         # Draw coordinates
-        self.canvas.create_text(x_c, y_c - r - 15, text=f"(X={x_in:.2f}, Y={y_in:.2f})", fill=UI_COLORS['PRIMARY_VARIANT'], font=("Arial", 10, "bold"))
+        canvas.create_text(x_c, y_c - r - 15, text=f"(X={x_in:.2f}, Y={y_in:.2f})", fill=UI_COLORS['PRIMARY_VARIANT'], font=("Arial", 10, "bold"))
         
         # Tool head position updated
 
-    def _draw_dxf_entities_inches(self):
+    def _zoom_in(self):
+        """Zoom in the canvas view (keep centered)."""
+        self._zoom_at(1.2, keep_center=True)
+
+    def _zoom_out(self):
+        """Zoom out the canvas view (keep centered)."""
+        self._zoom_at(1 / 1.2, keep_center=True)
+
+    def _reset_zoom(self):
+        """Reset zoom and pan to default."""
+        self.zoom_level = 1.0
+        self.pan_offset = (0.0, 0.0)
+        self._schedule_canvas_redraw()
+
+    def _zoom_at(self, factor, screen_x=None, screen_y=None, keep_center=False):
+        """Zoom around a specific screen point or keep centered."""
+        new_zoom = self.zoom_level * factor
+        if new_zoom < 1.0:
+            new_zoom = 1.0
+        if new_zoom > 6.0:
+            new_zoom = 6.0
+
+        if abs(new_zoom - self.zoom_level) < 1e-6:
+            return
+
+        self.zoom_level = new_zoom
+
+        if keep_center or screen_x is None or screen_y is None:
+            self.pan_offset = (0.0, 0.0)
+            self._schedule_canvas_redraw()
+            return
+
+        center_x = self.canvas_width / 2
+        center_y = self.canvas_height / 2
+
+        base_x = (screen_x - self.pan_offset[0] - center_x) / (self.zoom_level / factor) + center_x
+        base_y = (screen_y - self.pan_offset[1] - center_y) / (self.zoom_level / factor) + center_y
+
+        self.pan_offset = (
+            screen_x - center_x - (base_x - center_x) * self.zoom_level,
+            screen_y - center_y - (base_y - center_y) * self.zoom_level
+        )
+
+        self._schedule_canvas_redraw()
+
+    def _on_mouse_wheel_zoom(self, event):
+        """Zoom using mouse wheel / touchpad gesture."""
+        if event.delta > 0:
+            factor = 1.1
+        else:
+            factor = 1 / 1.1
+        self._zoom_at(factor, keep_center=True)
+
+    def _on_mouse_wheel_zoom_linux(self, event):
+        """Linux mouse wheel zoom support."""
+        if event.num == 4:
+            factor = 1.1
+        else:
+            factor = 1 / 1.1
+        self._zoom_at(factor, keep_center=True)
+
+    def _pan_start(self, event):
+        """Start panning the canvas."""
+        self._pan_start_pos = (event.x, event.y)
+        self.canvas.config(cursor="fleur")
+
+    def _pan_move(self, event):
+        """Move the canvas while panning."""
+        if self._pan_start_pos:
+            dx = event.x - self._pan_start_pos[0]
+            dy = event.y - self._pan_start_pos[1]
+            self.pan_offset = (self.pan_offset[0] + dx, self.pan_offset[1] + dy)
+            self._pan_start_pos = (event.x, event.y)
+            self._schedule_canvas_redraw()
+
+    def _pan_end(self, event):
+        """End panning."""
+        self._pan_start_pos = None
+        self.canvas.config(cursor="")
+
+
+    def _draw_dxf_entities_inches(self, canvas, canvas_width, canvas_height):
         # Draw DXF entities, converting mm to inches for plotting
         if not (self.dxf_doc and self.dxf_entities):
             # No DXF entities to draw
@@ -1188,9 +1352,9 @@ class FabricCNCApp:
                     continue
                 flat = []
                 for x, y in points:
-                    x_c, y_c = self._inches_to_canvas(x, y)
+                    x_c, y_c = self._inches_to_canvas(x, y, canvas_width, canvas_height)
                     flat.extend([x_c, y_c])
-                self.canvas.create_line(flat, fill=color, width=2)
+                canvas.create_line(flat, fill=color, width=2)
             return  # Don't double-plot entities if toolpaths are present
 
         # Fallback: plot all entities in gray if toolpaths not yet generated
@@ -1204,9 +1368,9 @@ class FabricCNCApp:
                 y1_norm = y1 * scale - dy
                 x2_norm = x2 * scale - dx
                 y2_norm = y2 * scale - dy
-                x1c, y1c = self._inches_to_canvas(x1_norm, y1_norm)
-                x2c, y2c = self._inches_to_canvas(x2_norm, y2_norm)
-                self.canvas.create_line(x1c, y1c, x2c, y2c, fill=UI_COLORS['PRIMARY_VARIANT'], width=2)
+                x1c, y1c = self._inches_to_canvas(x1_norm, y1_norm, canvas_width, canvas_height)
+                x2c, y2c = self._inches_to_canvas(x2_norm, y2_norm, canvas_width, canvas_height)
+                canvas.create_line(x1c, y1c, x2c, y2c, fill=UI_COLORS['PRIMARY_VARIANT'], width=2)
             elif t == 'LWPOLYLINE':
                 points = [(p[0], p[1]) for p in e.get_points()]
                 flat = []
@@ -1214,9 +1378,9 @@ class FabricCNCApp:
                     # Apply scale and offset
                     x_norm = x * scale - dx
                     y_norm = y * scale - dy
-                    x_c, y_c = self._inches_to_canvas(x_norm, y_norm)
+                    x_c, y_c = self._inches_to_canvas(x_norm, y_norm, canvas_width, canvas_height)
                     flat.extend([x_c, y_c])
-                self.canvas.create_line(flat, fill=UI_COLORS['PRIMARY_VARIANT'], width=2)
+                canvas.create_line(flat, fill=UI_COLORS['PRIMARY_VARIANT'], width=2)
             elif t == 'POLYLINE':
                 points = [(v.dxf.x, v.dxf.y) for v in e.vertices()]
                 flat = []
@@ -1224,9 +1388,9 @@ class FabricCNCApp:
                     # Apply scale and offset
                     x_norm = x * scale - dx
                     y_norm = y * scale - dy
-                    x_c, y_c = self._inches_to_canvas(x_norm, y_norm)
+                    x_c, y_c = self._inches_to_canvas(x_norm, y_norm, canvas_width, canvas_height)
                     flat.extend([x_c, y_c])
-                self.canvas.create_line(flat, fill=UI_COLORS['PRIMARY_VARIANT'], width=2)
+                canvas.create_line(flat, fill=UI_COLORS['PRIMARY_VARIANT'], width=2)
             elif t == 'SPLINE':
                 points = list(e.flattening(0.1))
                 flat = []
@@ -1234,9 +1398,9 @@ class FabricCNCApp:
                     # Apply scale and offset
                     x_norm = x * scale - dx
                     y_norm = y * scale - dy
-                    x_c, y_c = self._inches_to_canvas(x_norm, y_norm)
+                    x_c, y_c = self._inches_to_canvas(x_norm, y_norm, canvas_width, canvas_height)
                     flat.extend([x_c, y_c])
-                self.canvas.create_line(flat, fill=UI_COLORS['PRIMARY_VARIANT'], width=2)
+                canvas.create_line(flat, fill=UI_COLORS['PRIMARY_VARIANT'], width=2)
             elif t == 'ARC':
                 center = e.dxf.center
                 r = e.dxf.radius
@@ -1253,9 +1417,9 @@ class FabricCNCApp:
                     # Apply scale and offset
                     x_norm = x * scale - dx
                     y_norm = y * scale - dy
-                    x_c, y_c = self._inches_to_canvas(x_norm, y_norm)
+                    x_c, y_c = self._inches_to_canvas(x_norm, y_norm, canvas_width, canvas_height)
                     points.append((x_c, y_c))
-                self.canvas.create_line(*[coord for pt in points for coord in pt], fill=UI_COLORS['PRIMARY_VARIANT'], width=2)
+                canvas.create_line(*[coord for pt in points for coord in pt], fill=UI_COLORS['PRIMARY_VARIANT'], width=2)
             elif t == 'CIRCLE':
                 center = e.dxf.center
                 r = e.dxf.radius
@@ -1268,11 +1432,11 @@ class FabricCNCApp:
                     # Apply scale and offset
                     x_norm = x * scale - dx
                     y_norm = y * scale - dy
-                    x_c, y_c = self._inches_to_canvas(x_norm, y_norm)
+                    x_c, y_c = self._inches_to_canvas(x_norm, y_norm, canvas_width, canvas_height)
                     points.append((x_c, y_c))
-                self.canvas.create_line(*[coord for pt in points for coord in pt], fill=UI_COLORS['PRIMARY_VARIANT'], width=2)
+                canvas.create_line(*[coord for pt in points for coord in pt], fill=UI_COLORS['PRIMARY_VARIANT'], width=2)
 
-    def _draw_toolpath_inches(self):
+    def _draw_toolpath_inches(self, canvas, canvas_width, canvas_height):
         """Draw toolpath with arrows and corner markers on the canvas."""
         if not hasattr(self, 'toolpath_data') or not self.toolpath_data:
             return
@@ -1283,19 +1447,19 @@ class FabricCNCApp:
             if len(positions) >= 2:
                 canvas_points = []
                 for x_in, y_in in positions:
-                    x_canvas, y_canvas = self._inches_to_canvas(x_in, y_in)
+                    x_canvas, y_canvas = self._inches_to_canvas(x_in, y_in, canvas_width, canvas_height)
                     canvas_points.extend([x_canvas, y_canvas])
                 
                 # Draw main toolpath line
-                self.canvas.create_line(canvas_points, fill='blue', width=2, tags='toolpath')
+                canvas.create_line(canvas_points, fill='blue', width=2, tags='toolpath')
         
         # Draw corner markers
         if self.toolpath_data.get('corners'):
             for x_in, y_in in self.toolpath_data['corners']:
-                x_canvas, y_canvas = self._inches_to_canvas(x_in, y_in)
+                x_canvas, y_canvas = self._inches_to_canvas(x_in, y_in, canvas_width, canvas_height)
                 # Draw red star for corners
                 size = 8
-                self.canvas.create_polygon(
+                canvas.create_polygon(
                     x_canvas, y_canvas - size,
                     x_canvas + size * 0.5, y_canvas - size * 0.5,
                     x_canvas + size, y_canvas,
@@ -1341,7 +1505,7 @@ class FabricCNCApp:
                 if i < len(positions):
                     x_in, y_in = positions[i]
                     a_inches = orientations[i]  # A-axis value in inches
-                    x_canvas, y_canvas = self._inches_to_canvas(x_in, y_in)
+                    x_canvas, y_canvas = self._inches_to_canvas(x_in, y_in, canvas_width, canvas_height)
                     
                     # Convert A-axis inches to degrees: 1 inch = 360 degrees
                     a_deg = a_inches * 360.0
@@ -1360,7 +1524,7 @@ class FabricCNCApp:
                     dy = -arrow_length * math.sin(angle_rad)  # Flip Y component
                     
                     # Draw arrow
-                    self.canvas.create_line(
+                    canvas.create_line(
                         x_canvas, y_canvas,
                         x_canvas + dx, y_canvas + dy,
                         fill='green', width=3, arrow='last', tags='toolpath'
@@ -2307,8 +2471,14 @@ class FabricCNCApp:
             )
         
         # Check if coordinates are within machine limits
-        if abs(x_in) > 60.0 or abs(y_in) > 35.0:
-            logger.warning(f"Coordinates beyond machine limits! X={x_in:.2f}in (limit: ±60.0in), Y={y_in:.2f}in (limit: ±35.0in)")
+        if abs(x_in) > config.APP_CONFIG['X_MAX_INCH'] or abs(y_in) > config.APP_CONFIG['Y_MAX_INCH']:
+            logger.warning(
+                "Coordinates beyond machine limits! X=%0.2fin (limit: ±%0.1fin), Y=%0.2fin (limit: ±%0.1fin)",
+                x_in,
+                config.APP_CONFIG['X_MAX_INCH'],
+                y_in,
+                config.APP_CONFIG['Y_MAX_INCH']
+            )
         
         # Update position tracking and schedule canvas redraw
         self._last_position = self.motor_ctrl.get_position().copy()
