@@ -907,8 +907,6 @@ class FabricCNCApp:
         else:
             fullscreen_window.attributes('-fullscreen', True)
         fullscreen_window.grab_set()
-        # Force canvas redraw after expand to fix white screen bug
-        fullscreen_window.after(100, lambda: self._draw_canvas_content(fullscreen_window.children['!ctkcanvas'], fullscreen_window.winfo_width(), fullscreen_window.winfo_height()))
 
         # Canvas
         fullscreen_canvas = ctk.CTkCanvas(fullscreen_window, bg=UI_COLORS['SURFACE'], highlightthickness=0)
