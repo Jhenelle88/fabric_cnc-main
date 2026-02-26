@@ -430,6 +430,32 @@ class FabricCNCApp:
         # Set window to screen dimensions
         self.root.geometry(f"{screen_width}x{screen_height}+0+0")
         
+        # Responsive layout settings
+        if screen_width < 1024:  # Small screens (e.g. 800x480)
+            self.sidebar_width = 220
+            self.button_height = 40
+            self.base_font_size = 12
+            self.header_font_size = 16
+            self.title_font_size = 18
+            self.jog_btn_font_size = 18
+            self.small_icon_size = 24
+        elif screen_width < 1400:  # Medium screens
+            self.sidebar_width = 300
+            self.button_height = 45
+            self.base_font_size = 14
+            self.header_font_size = 20
+            self.title_font_size = 22
+            self.jog_btn_font_size = 22
+            self.small_icon_size = 26
+        else:  # Large screens
+            self.sidebar_width = 420
+            self.button_height = 50
+            self.base_font_size = 16
+            self.header_font_size = 25
+            self.title_font_size = 25
+            self.jog_btn_font_size = 24
+            self.small_icon_size = 26
+        
         # Force fullscreen on startup - try multiple approaches
         try:
             self.root.attributes('-fullscreen', True)
@@ -563,24 +589,21 @@ class FabricCNCApp:
         # App Bar using grid for proper layout control
         self.app_bar = ctk.CTkFrame(self.root, fg_color=UI_COLORS['PRIMARY_COLOR'], corner_radius=0, height=56)
         self.app_bar.pack(fill="x", side="top")
-        
-        # Configure grid columns: title (left), spacer (middle expands), status and close (right)
-        self.app_bar.grid_columnconfigure(0, weight=0)  # Title column
-        self.app_bar.grid_columnconfigure(1, weight=1)  # Spacer (expands)
-        self.app_bar.grid_columnconfigure(2, weight=0)  # Status column
-        self.app_bar.grid_columnconfigure(3, weight=0)  # Close button column
+        self.app_bar.grid_columnconfigure(0, weight=0)
+        self.app_bar.grid_columnconfigure(1, weight=1)
+        self.app_bar.grid_columnconfigure(2, weight=0)
+        self.app_bar.grid_columnconfigure(3, weight=0)
         self.app_bar.grid_rowconfigure(0, weight=1)
-        
         # Title on the left
-        self.title = ctk.CTkLabel(self.app_bar, text="   FABCUT: Automated Fabric Cutting Machine", text_color=UI_COLORS['ON_PRIMARY'], font=("Arial", 25, "bold"))
+        self.title = ctk.CTkLabel(self.app_bar, text="   FABCUT: Automated Fabric Cutting Machine", text_color=UI_COLORS['ON_PRIMARY'], font=("Arial", self.title_font_size, "bold"))
         self.title.grid(row=0, column=0, padx=UI_PADDING['SMALL'], pady=UI_PADDING['SMALL'], sticky="w")
         
         # Status display in the middle-right
         status_frame = ctk.CTkFrame(self.app_bar, fg_color="transparent")
         status_frame.grid(row=0, column=2, padx=UI_PADDING['MEDIUM'], pady=UI_PADDING['SMALL'], sticky="e")
         
-        ctk.CTkLabel(status_frame, text="Status:", text_color=UI_COLORS['ON_PRIMARY'], font=("Arial", 18, "bold")).pack(side="left", padx=(0, 5))
-        self.status_label = ctk.CTkLabel(status_frame, text="Ready", text_color=UI_COLORS['ON_PRIMARY'], font=("Arial", 18, "bold"))
+        ctk.CTkLabel(status_frame, text="Status:", text_color=UI_COLORS['ON_PRIMARY'], font=("Arial", self.header_font_size, "bold")).pack(side="left", padx=(0, 5))
+        self.status_label = ctk.CTkLabel(status_frame, text="Ready", text_color=UI_COLORS['ON_PRIMARY'], font=("Arial", self.header_font_size, "bold"))
         self.status_label.pack(side="left", padx=(0, 20))
         
         # Close button at the very top right
@@ -592,43 +615,66 @@ class FabricCNCApp:
         # Main container using grid for three-column layout
         self.main_container = ctk.CTkFrame(self.root, fg_color=UI_COLORS['BACKGROUND'])
         self.main_container.pack(expand=True, fill="both", padx=0, pady=0)
-        
-        # Configure grid weights - middle column gets all available space
-        self.main_container.grid_columnconfigure(0, weight=0, minsize=420)  # Left column - wider
-        self.main_container.grid_columnconfigure(1, weight=1)  # Middle column - takes all available space
-        self.main_container.grid_columnconfigure(2, weight=0, minsize=420)  # Right column - same width as left
-        self.main_container.grid_rowconfigure(0, weight=1)  # Single row takes full height
+
+        # Responsive: stack columns vertically if window is narrow
+        screen_width = self.root.winfo_screenwidth()
+        self.is_vertical_layout = screen_width < 900
+
+        # Make sidebars narrower and center much larger
+        self.sidebar_width = 200
+
+        if self.is_vertical_layout:
+            # Stack vertically: each section gets a row
+            self.main_container.grid_rowconfigure(0, weight=1)
+            self.main_container.grid_rowconfigure(1, weight=2)
+            self.main_container.grid_rowconfigure(2, weight=1)
+            self.main_container.grid_columnconfigure(0, weight=1)
+        else:
+            # Three columns: sidebars fixed, center much larger
+            self.main_container.grid_columnconfigure(0, weight=0, minsize=self.sidebar_width)
+            self.main_container.grid_columnconfigure(1, weight=6)
+            self.main_container.grid_columnconfigure(2, weight=0, minsize=self.sidebar_width)
+            self.main_container.grid_rowconfigure(0, weight=1)
         
         # === LEFT COLUMN: Job Control ===
-        self.left_column = ctk.CTkScrollableFrame(self.main_container, fg_color=UI_COLORS['SURFACE'], corner_radius=12, scrollbar_button_color=UI_COLORS['SURFACE'], scrollbar_button_hover_color=UI_COLORS['SURFACE'])
-        self.left_column.grid(row=0, column=0, sticky="nsew", padx=UI_PADDING['SMALL'], pady=UI_PADDING['SMALL'])
+        sidebar_max_height = int(self.root.winfo_screenheight() * 0.96)  # 96% of screen height
+        self.left_column = ctk.CTkScrollableFrame(
+            self.main_container,
+            fg_color=UI_COLORS['SURFACE'],
+            corner_radius=12,
+            scrollbar_button_color=UI_COLORS['SURFACE'],
+            scrollbar_button_hover_color=UI_COLORS['SURFACE'],
+            width=self.sidebar_width,
+            height=sidebar_max_height
+        )
+        # self.left_column.grid_propagate(False)  # Not supported by CTkScrollableFrame
+        self.left_column.configure(height=sidebar_max_height)
+        if self.is_vertical_layout:
+            self.left_column.grid(row=0, column=0, sticky="nsew", padx=UI_PADDING['SMALL'], pady=UI_PADDING['SMALL'])
+        else:
+            self.left_column.grid(row=0, column=0, sticky="nsew", padx=UI_PADDING['SMALL'], pady=UI_PADDING['SMALL'])
         
         # Configure left column
         self.left_column.grid_columnconfigure(0, weight=1)
         
         # ===== STEP 1: LOAD DESIGN =====
         load_design_section = ctk.CTkFrame(self.left_column, fg_color="#d0d0d0", corner_radius=8)
-        load_design_section.pack(fill="x", padx=UI_PADDING['SMALL'], pady=UI_PADDING['SMALL'])
+        load_design_section.pack(fill="x", padx=6, pady=(6, 4), anchor="n")
         load_design_section.grid_columnconfigure(0, weight=1)
-        
-        # Title with step number
-        step_label_1 = ctk.CTkLabel(load_design_section, text="1   Load Design", font=("Arial", 16, "bold"), text_color=UI_COLORS['PRIMARY_COLOR'])
-        step_label_1.pack(pady=(UI_PADDING['MEDIUM'], UI_PADDING['MEDIUM']), padx=UI_PADDING['MEDIUM'], anchor="w")
-        
-        # Import DXF button
-        import_btn = self._create_stylish_button(load_design_section, "📁  Import DXF", self._import_dxf, "primary", height=50)
-        import_btn.pack(fill="x", padx=UI_PADDING['MEDIUM'], pady=(0, UI_PADDING['MEDIUM']))
-        
+        # Title with step number (smaller padding)
+        step_label_1 = ctk.CTkLabel(load_design_section, text="1   Load Design", font=("Arial", 13, "bold"), text_color=UI_COLORS['PRIMARY_COLOR'])
+        step_label_1.pack(pady=(6, 4), padx=8, anchor="w")
+        # Import DXF button (fit sidebar, compact)
+        import_btn = self._create_stylish_button(load_design_section, "📁  Import DXF", self._import_dxf, "primary", height=30)
+        import_btn.pack(fill="x", padx=8, pady=(0, 6))
         # Pattern Library label and dropdown
-        ctk.CTkLabel(load_design_section, text="Pattern Library", font=("Arial", 14, "bold"), text_color=UI_COLORS['PRIMARY_COLOR']).pack(pady=(UI_PADDING['MEDIUM'], UI_PADDING['SMALL']), padx=UI_PADDING['MEDIUM'], anchor="w")
-        
+        ctk.CTkLabel(load_design_section, text="Pattern Library", font=("Arial", 11, "bold"), text_color=UI_COLORS['PRIMARY_COLOR']).pack(pady=(4, 2), padx=8, anchor="w")
         # Container frame for patterns browser
         self.patterns_browser_container = ctk.CTkFrame(load_design_section, fg_color="transparent")
         self.patterns_browser_container.pack(fill="both", expand=True, padx=0, pady=0)
-        
         # Pattern browser container
         browser_box = ctk.CTkFrame(self.patterns_browser_container, fg_color="#e8e8e8", corner_radius=8)
-        browser_box.pack(fill="both", expand=True, padx=UI_PADDING['MEDIUM'], pady=UI_PADDING['SMALL'])
+        browser_box.pack(fill="both", expand=True, padx=6, pady=4)
         
         # Toolbar row inside the same box: Back (left), actions (right)
         toolbar_frame = ctk.CTkFrame(browser_box, fg_color="transparent")
@@ -645,10 +691,10 @@ class FabricCNCApp:
             "fg_color": UI_COLORS['PRIMARY_COLOR'],
             "hover_color": UI_COLORS['PRIMARY_VARIANT'],
             "text_color": UI_COLORS['ON_PRIMARY'],
-            "width": 26,
-            "height": 26,
+            "width": self.small_icon_size,
+            "height": self.small_icon_size,
             "corner_radius": 6,
-            "font": ("Arial", 12, "bold"),
+            "font": ("Arial", self.base_font_size, "bold"),
         }
         
         # Back (upper-left)
@@ -679,39 +725,36 @@ class FabricCNCApp:
         
         # ===== STEP 2: PREPARE =====
         prepare_section = ctk.CTkFrame(self.left_column, fg_color="#d0d0d0", corner_radius=8)
-        prepare_section.pack(fill="x", padx=UI_PADDING['SMALL'], pady=UI_PADDING['SMALL'])
-        
-        # Title with step number
-        step_label_2 = ctk.CTkLabel(prepare_section, text="2   Prepare", font=("Arial", 16, "bold"), text_color=UI_COLORS['PRIMARY_COLOR'])
-        step_label_2.pack(pady=(UI_PADDING['MEDIUM'], UI_PADDING['MEDIUM']), padx=UI_PADDING['MEDIUM'], anchor="w")
-        
-        # Preview Toolpath button
-        preview_btn = self._create_stylish_button(prepare_section, "🔍  Preview Toolpath", self._preview_toolpath, "secondary", height=50)
-        preview_btn.pack(fill="x", padx=UI_PADDING['MEDIUM'], pady=(0, UI_PADDING['MEDIUM']))
+        prepare_section.pack(fill="x", padx=6, pady=(4, 4), anchor="n")
+        # Title with step number (smaller padding)
+        step_label_2 = ctk.CTkLabel(prepare_section, text="2   Prepare", font=("Arial", 13, "bold"), text_color=UI_COLORS['PRIMARY_COLOR'])
+        step_label_2.pack(pady=(6, 4), padx=8, anchor="w")
+        # Preview Toolpath button (fit sidebar, compact)
+        preview_btn = self._create_stylish_button(prepare_section, "🔍  Preview Toolpath", self._preview_toolpath, "secondary", height=30)
+        preview_btn.pack(fill="x", padx=8, pady=(0, 6))
         
         # ===== STEP 3: EXECUTE =====
         execute_section = ctk.CTkFrame(self.left_column, fg_color="#d0d0d0", corner_radius=8)
-        execute_section.pack(fill="both", expand=True, padx=UI_PADDING['SMALL'], pady=UI_PADDING['SMALL'])
-        
-        # Title with step number
-        step_label_3 = ctk.CTkLabel(execute_section, text="3   Execute", font=("Arial", 16, "bold"), text_color=UI_COLORS['PRIMARY_COLOR'])
-        step_label_3.pack(pady=(UI_PADDING['MEDIUM'], UI_PADDING['MEDIUM']), padx=UI_PADDING['MEDIUM'], anchor="w")
-        
-        # Run Job button
-        run_btn = self._create_stylish_button(execute_section, "   Run Job", self._run_toolpath, "success", height=50)
-        run_btn.pack(fill="x", padx=UI_PADDING['MEDIUM'], pady=(0, UI_PADDING['SMALL']))
-        
-        # Stop Execution button
-        stop_btn = self._create_stylish_button(execute_section, "   Stop Execution", self._stop_execution, "warning", height=50)
-        stop_btn.pack(fill="x", padx=UI_PADDING['MEDIUM'], pady=(0, UI_PADDING['SMALL']))
-        
-        # Emergency Stop button
-        estop_btn = self._create_stylish_button(execute_section, "   Emergency Stop", self._estop, "danger", height=50)
-        estop_btn.pack(fill="x", padx=UI_PADDING['MEDIUM'], pady=(0, UI_PADDING['MEDIUM']))
+        execute_section.pack(fill="x", padx=6, pady=(4, 6), anchor="n")
+        # Title with step number (smaller padding)
+        step_label_3 = ctk.CTkLabel(execute_section, text="3   Execute", font=("Arial", 13, "bold"), text_color=UI_COLORS['PRIMARY_COLOR'])
+        step_label_3.pack(pady=(6, 4), padx=8, anchor="w")
+        # Run Job button (fit sidebar, compact)
+        run_btn = self._create_stylish_button(execute_section, "   Run Job", self._run_toolpath, "success", height=30)
+        run_btn.pack(fill="x", padx=8, pady=(0, 4))
+        # Stop Execution button (fit sidebar, compact)
+        stop_btn = self._create_stylish_button(execute_section, "   Stop Execution", self._stop_execution, "warning", height=30)
+        stop_btn.pack(fill="x", padx=8, pady=(0, 4))
+        # Emergency Stop button (fit sidebar, compact)
+        estop_btn = self._create_stylish_button(execute_section, "   Emergency Stop", self._estop, "danger", height=30)
+        estop_btn.pack(fill="x", padx=8, pady=(0, 6))
 
         # === MIDDLE COLUMN: Plot Canvas ===
         self.center_column = ctk.CTkFrame(self.main_container, fg_color="#E0E0E0", corner_radius=12)
-        self.center_column.grid(row=0, column=1, sticky="nsew", padx=UI_PADDING['SMALL'], pady=UI_PADDING['SMALL'])
+        if self.is_vertical_layout:
+            self.center_column.grid(row=1, column=0, sticky="nsew", padx=UI_PADDING['SMALL'], pady=UI_PADDING['SMALL'])
+        else:
+            self.center_column.grid(row=0, column=1, sticky="nsew", padx=UI_PADDING['SMALL'], pady=UI_PADDING['SMALL'])
         
         # Configure center column to expand in both directions
         self.center_column.grid_rowconfigure(1, weight=1)
@@ -767,19 +810,18 @@ class FabricCNCApp:
 
 
         # === RIGHT COLUMN: Motor Controls ===
-        self.right_column = ctk.CTkScrollableFrame(self.main_container, fg_color=UI_COLORS['SURFACE'], corner_radius=12, scrollbar_button_color=UI_COLORS['SURFACE'], scrollbar_button_hover_color=UI_COLORS['SURFACE'])
-        self.right_column.grid(row=0, column=2, sticky="nsew", padx=UI_PADDING['SMALL'], pady=UI_PADDING['SMALL'])
-        
+        self.right_column = ctk.CTkScrollableFrame(self.main_container, fg_color=UI_COLORS['SURFACE'], corner_radius=12, scrollbar_button_color=UI_COLORS['SURFACE'], scrollbar_button_hover_color=UI_COLORS['SURFACE'], width=self.sidebar_width)
+        if self.is_vertical_layout:
+            self.right_column.grid(row=2, column=0, sticky="nsew", padx=UI_PADDING['SMALL'], pady=UI_PADDING['SMALL'])
+        else:
+            self.right_column.grid(row=0, column=2, sticky="nsew", padx=UI_PADDING['SMALL'], pady=UI_PADDING['SMALL'])
         # Configure right column
         self.right_column.grid_columnconfigure(0, weight=1)
-        
-        # Title
-        # Unified motor controls section
+        # Unified motor controls section (compact)
         motor_section = ctk.CTkFrame(self.right_column, fg_color="#d0d0d0", corner_radius=8)
-        motor_section.pack(fill="x", padx=UI_PADDING['SMALL'], pady=UI_PADDING['SMALL'])
-        
-        # Motor Controls label inside the box
-        ctk.CTkLabel(motor_section, text="Motor Controls", font=("Arial", 16, "bold"), text_color=UI_COLORS['PRIMARY_COLOR']).grid(row=0, column=0, columnspan=2, pady=(UI_PADDING['MEDIUM'], UI_PADDING['MEDIUM']), padx=UI_PADDING['MEDIUM'])
+        motor_section.pack(fill="x", padx=6, pady=(6, 4), anchor="n")
+        # Motor Controls label inside the box (smaller font/padding)
+        ctk.CTkLabel(motor_section, text="Motor Controls", font=("Arial", 13, "bold"), text_color=UI_COLORS['PRIMARY_COLOR']).grid(row=0, column=0, columnspan=2, pady=(6, 4), padx=8)
         
         # 8-row layout: label (1 row) + arrows (3 rows) + Z/A (2 rows) + jog speed (2 rows)
         motor_section.grid_columnconfigure(0, weight=1)
@@ -797,61 +839,49 @@ class FabricCNCApp:
         motor_section.grid_rowconfigure(11, weight=1)  # Z limit value display row
         
         # Arrow buttons - stacked layout with equal widths and better spacing
-        self._add_compact_jog_button(motor_section, "▲", lambda: self._jog('Y', +self.jog_size)).grid(row=1, column=0, columnspan=2, padx=UI_PADDING['MEDIUM'], pady=UI_PADDING['BUTTON_SPACING'], sticky="nsew")
-        self._add_compact_jog_button(motor_section, "◀", lambda: self._jog('X', -self.jog_size)).grid(row=2, column=0, padx=UI_PADDING['MEDIUM'], pady=UI_PADDING['BUTTON_SPACING'], sticky="nsew")
-        self._add_compact_jog_button(motor_section, "▶", lambda: self._jog('X', +self.jog_size)).grid(row=2, column=1, padx=UI_PADDING['MEDIUM'], pady=UI_PADDING['BUTTON_SPACING'], sticky="nsew")
-        self._add_compact_jog_button(motor_section, "▼", lambda: self._jog('Y', -self.jog_size)).grid(row=3, column=0, columnspan=2, padx=UI_PADDING['MEDIUM'], pady=UI_PADDING['BUTTON_SPACING'], sticky="nsew")
-        
-        # Z and A controls - now using jog_size with better spacing
-        self._add_compact_jog_button(motor_section, "Z+", lambda: self._jog('Z', +self.jog_size)).grid(row=4, column=0, padx=UI_PADDING['MEDIUM'], pady=UI_PADDING['BUTTON_SPACING'], sticky="nsew")
-        self._add_compact_jog_button(motor_section, "Z-", lambda: self._jog('Z', -self.jog_size)).grid(row=4, column=1, padx=UI_PADDING['MEDIUM'], pady=UI_PADDING['BUTTON_SPACING'], sticky="nsew")
-        self._add_compact_jog_button(motor_section, "A+", lambda: self._jog('A', +self.jog_size)).grid(row=5, column=0, padx=UI_PADDING['MEDIUM'], pady=UI_PADDING['BUTTON_SPACING'], sticky="nsew")
-        self._add_compact_jog_button(motor_section, "A-", lambda: self._jog('A', -self.jog_size)).grid(row=5, column=1, padx=UI_PADDING['MEDIUM'], pady=UI_PADDING['BUTTON_SPACING'], sticky="nsew")
+        self._add_compact_jog_button(motor_section, "▲", lambda: self._jog('Y', +self.jog_size)).grid(row=1, column=0, columnspan=2, padx=8, pady=3, sticky="nsew")
+        self._add_compact_jog_button(motor_section, "◀", lambda: self._jog('X', -self.jog_size)).grid(row=2, column=0, padx=8, pady=3, sticky="nsew")
+        self._add_compact_jog_button(motor_section, "▶", lambda: self._jog('X', +self.jog_size)).grid(row=2, column=1, padx=8, pady=3, sticky="nsew")
+        self._add_compact_jog_button(motor_section, "▼", lambda: self._jog('Y', -self.jog_size)).grid(row=3, column=0, columnspan=2, padx=8, pady=3, sticky="nsew")
+        # Z and A controls - compact
+        self._add_compact_jog_button(motor_section, "Z+", lambda: self._jog('Z', +self.jog_size)).grid(row=4, column=0, padx=8, pady=3, sticky="nsew")
+        self._add_compact_jog_button(motor_section, "Z-", lambda: self._jog('Z', -self.jog_size)).grid(row=4, column=1, padx=8, pady=3, sticky="nsew")
+        self._add_compact_jog_button(motor_section, "A+", lambda: self._jog('A', +self.jog_size)).grid(row=5, column=0, padx=8, pady=3, sticky="nsew")
+        self._add_compact_jog_button(motor_section, "A-", lambda: self._jog('A', -self.jog_size)).grid(row=5, column=1, padx=8, pady=3, sticky="nsew")
         
         # Jog size slider
-        ctk.CTkLabel(motor_section, text="Jog Size:", font=("Arial", 18, "bold"), text_color=UI_COLORS['PRIMARY_COLOR']).grid(row=6, column=0, columnspan=2, pady=(UI_PADDING['MEDIUM'], UI_PADDING['SMALL']), padx=UI_PADDING['MEDIUM'])
-        jog_slider = ctk.CTkSlider(motor_section, from_=1, to=100, number_of_steps=99, command=self._on_jog_slider)
-        jog_slider.grid(row=7, column=0, columnspan=2, padx=UI_PADDING['MEDIUM'], pady=UI_PADDING['BUTTON_SPACING'], sticky="ew")
-        jog_slider.set(20)  # Set to 1.0 inch (20 * 0.05)
-        
-        # Jog size value display
-        self.jog_size_label = ctk.CTkLabel(motor_section, text="1.00 in", font=("Arial", 14, "bold"), text_color=UI_COLORS['ON_SURFACE'])
-        self.jog_size_label.grid(row=8, column=0, columnspan=2, pady=UI_PADDING['BUTTON_SPACING'])
-        
-        # Initialize slider to sync all jog size variables
+        ctk.CTkLabel(motor_section, text="Jog Size:", font=("Arial", 11, "bold"), text_color=UI_COLORS['PRIMARY_COLOR']).grid(row=6, column=0, columnspan=2, pady=(6, 2), padx=8)
+        jog_slider = ctk.CTkSlider(motor_section, from_=1, to=100, number_of_steps=99, command=self._on_jog_slider, height=10)
+        jog_slider.grid(row=7, column=0, columnspan=2, padx=8, pady=2, sticky="ew")
+        jog_slider.set(20)
+        self.jog_size_label = ctk.CTkLabel(motor_section, text="1.00 in", font=("Arial", 10, "bold"), text_color=UI_COLORS['ON_SURFACE'])
+        self.jog_size_label.grid(row=8, column=0, columnspan=2, pady=2)
         self._on_jog_slider(20)
-        
-        # Z lower limit slider
-        ctk.CTkLabel(motor_section, text="Z Lower Limit:", font=("Arial", 18, "bold"), text_color=UI_COLORS['PRIMARY_COLOR']).grid(row=9, column=0, columnspan=2, pady=(UI_PADDING['MEDIUM'], UI_PADDING['SMALL']), padx=UI_PADDING['MEDIUM'])
-        z_limit_slider = ctk.CTkSlider(motor_section, from_=2.0, to=3.0, number_of_steps=20, command=self._on_z_limit_slider)
-        z_limit_slider.grid(row=10, column=0, columnspan=2, padx=UI_PADDING['MEDIUM'], pady=UI_PADDING['BUTTON_SPACING'], sticky="ew")
-        z_limit_slider.set(2.0)  # Set to -2.0 inch (2.0 on slider)
-        
-        # Z lower limit value display
-        self.z_limit_label = ctk.CTkLabel(motor_section, text="-2.00 in", font=("Arial", 14, "bold"), text_color=UI_COLORS['ON_SURFACE'])
-        self.z_limit_label.grid(row=11, column=0, columnspan=2, pady=UI_PADDING['BUTTON_SPACING'])
-        
-        # Initialize Z limit slider to sync all variables
+        ctk.CTkLabel(motor_section, text="Z Lower Limit:", font=("Arial", 11, "bold"), text_color=UI_COLORS['PRIMARY_COLOR']).grid(row=9, column=0, columnspan=2, pady=(6, 2), padx=8)
+        z_limit_slider = ctk.CTkSlider(motor_section, from_=2.0, to=3.0, number_of_steps=20, command=self._on_z_limit_slider, height=10)
+        z_limit_slider.grid(row=10, column=0, columnspan=2, padx=8, pady=2, sticky="ew")
+        z_limit_slider.set(2.0)
+        self.z_limit_label = ctk.CTkLabel(motor_section, text="-2.00 in", font=("Arial", 10, "bold"), text_color=UI_COLORS['ON_SURFACE'])
+        self.z_limit_label.grid(row=11, column=0, columnspan=2, pady=2)
         self._on_z_limit_slider(2.0)
         
         # Home controls section
         home_section = ctk.CTkFrame(self.right_column, fg_color="#d0d0d0", corner_radius=8)
-        home_section.pack(fill="x", padx=UI_PADDING['SMALL'], pady=UI_PADDING['SMALL'])
+        home_section.pack(fill="x", padx=6, pady=(6, 4), anchor="n")
         
         home_buttons = [
             ("Home All", self._home_all, "success")
         ]
         
         for i, (text, command, button_type) in enumerate(home_buttons):
-            btn = self._create_stylish_button(home_section, text, command, button_type, height=50)
-            btn.pack(fill=ctk.X, padx=UI_PADDING['MEDIUM'], pady=UI_PADDING['MEDIUM'])
+            btn = self._create_stylish_button(home_section, text, command, button_type, height=30)
+            btn.pack(fill=ctk.X, padx=8, pady=4)
         
         # Coordinates display section
         coord_section = ctk.CTkFrame(self.right_column, fg_color="#d0d0d0", corner_radius=8)
-        coord_section.pack(fill="x", padx=UI_PADDING['SMALL'], pady=UI_PADDING['SMALL'])
-        
-        self.coord_label = ctk.CTkLabel(coord_section, text="", font=("Consolas", 13, "bold"), text_color=UI_COLORS['ON_SURFACE'])
-        self.coord_label.pack(pady=UI_PADDING['SMALL'])
+        coord_section.pack(fill="x", padx=6, pady=(6, 4), anchor="n")
+        self.coord_label = ctk.CTkLabel(coord_section, text="", font=("Consolas", 10, "bold"), text_color=UI_COLORS['ON_SURFACE'])
+        self.coord_label.pack(pady=4)
 
     def _open_fullscreen_canvas(self):
         """Open a new window with a fullscreen canvas."""
@@ -1740,11 +1770,11 @@ class FabricCNCApp:
                         fg_color="#6B7280",
                         hover_color="#4B5563",
                         text_color="#ffffff",
-                        height=40,
+                        height=28,
                         corner_radius=4,
-                        font=("Arial", 14, "bold")
+                        font=("Arial", 11, "bold")
                     )
-                    btn.pack(fill="x", padx=8, pady=6)
+                    btn.pack(fill="x", padx=6, pady=3)
             
             # Display files
             if files:
@@ -1760,9 +1790,9 @@ class FabricCNCApp:
                         command=lambda f=filename, fp=file_path: self._select_dxf_file(f, fp),
                         fg_color="#888888" if self.selected_dxf_file != filename else UI_COLORS['PRIMARY_COLOR'],
                         text_color="#ffffff",
-                        height=36,
+                        height=self.button_height - 4,
                         corner_radius=4,
-                        font=("Arial", 10)
+                        font=("Arial", self.base_font_size - 2)
                     )
                     btn.pack(fill="x", padx=8, pady=4)
             
@@ -2508,12 +2538,12 @@ class FabricCNCApp:
 
     def _add_jog_button(self, parent, text, cmd):
         # Consistent font with rest of project
-        btn = ctk.CTkButton(parent, text=text, command=cmd, width=50, height=40, fg_color=UI_COLORS['BUTTON_PRIMARY'], text_color=UI_COLORS['BUTTON_TEXT'], hover_color=UI_COLORS['BUTTON_PRIMARY_HOVER'], corner_radius=8, font=("Arial", 16, "bold"))
+        btn = ctk.CTkButton(parent, text=text, command=cmd, width=50, height=self.button_height, fg_color=UI_COLORS['BUTTON_PRIMARY'], text_color=UI_COLORS['BUTTON_TEXT'], hover_color=UI_COLORS['BUTTON_PRIMARY_HOVER'], corner_radius=8, font=("Arial", self.base_font_size, "bold"))
         return btn
 
     def _add_compact_jog_button(self, parent, text, cmd):
         # Compact version with consistent font styling
-        btn = ctk.CTkButton(parent, text=text, command=cmd, width=60, height=45, fg_color=UI_COLORS['BUTTON_PRIMARY'], text_color=UI_COLORS['BUTTON_TEXT'], hover_color=UI_COLORS['BUTTON_PRIMARY_HOVER'], corner_radius=8, font=("Arial", 24, "bold"))
+        btn = ctk.CTkButton(parent, text=text, command=cmd, width=60, height=self.button_height, fg_color=UI_COLORS['BUTTON_PRIMARY'], text_color=UI_COLORS['BUTTON_TEXT'], hover_color=UI_COLORS['BUTTON_PRIMARY_HOVER'], corner_radius=8, font=("Arial", self.jog_btn_font_size, "bold"))
         return btn
 
     def _create_stylish_button(self, parent, text, command, button_type="primary", **kwargs):
@@ -2535,9 +2565,9 @@ class FabricCNCApp:
             'text_color': UI_COLORS['BUTTON_TEXT'],
             'hover_color': hover_color,
             'corner_radius': 10,  # Slightly more rounded for modern look
-            'font': ("Arial", 16, "bold"),
+            'font': ("Arial", self.base_font_size, "bold"),
             'border_width': 0,  # No border for clean look
-            'height': 40,
+            'height': self.button_height,
         }
         
         # Update with any custom kwargs

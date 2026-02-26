@@ -70,7 +70,7 @@ class Config:
         )
         
         # System Configuration
-        self.simulation_mode = self._get_bool_env('FABRIC_CNC_SIMULATION', False)
+        self.simulation_mode = self._get_bool_env('FABRIC_CNC_SIMULATION', True)
         self.step_pulse_duration = float(
             os.getenv('FABRIC_CNC_STEP_PULSE_DURATION', '0.001')
         )
