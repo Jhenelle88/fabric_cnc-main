@@ -637,7 +637,11 @@ class FabricCNCApp:
             self.main_container.grid_rowconfigure(0, weight=1)
         
         # === LEFT COLUMN: Job Control ===
-        sidebar_max_height = int(self.root.winfo_screenheight() * 0.60)  # 60% of screen height for even shorter sidebar
+        import config
+        if config.ON_RPI:
+            sidebar_max_height = int(self.root.winfo_screenheight() * 0.50)  # 50% of screen height on RPi
+        else:
+            sidebar_max_height = int(self.root.winfo_screenheight() * 0.60)  # 60% of screen height elsewhere
         self.left_column = ctk.CTkScrollableFrame(
             self.main_container,
             fg_color=UI_COLORS['SURFACE'],
