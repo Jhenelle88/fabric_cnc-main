@@ -646,13 +646,23 @@ class FabricCNCApp:
             self.main_container,
             fg_color=UI_COLORS['SURFACE'],
             corner_radius=8,
-            scrollbar_button_color=UI_COLORS['SURFACE'],
-            scrollbar_button_hover_color=UI_COLORS['SURFACE'],
+            scrollbar_button_color="#e0e0e0",
+            scrollbar_button_hover_color="#cccccc",
             width=self.sidebar_width,
-            height=sidebar_max_height
+            height=sidebar_max_height,
+            orientation="vertical"
         )
-        # Apply same height to right sidebar
-        self.right_column = ctk.CTkScrollableFrame(self.main_container, fg_color=UI_COLORS['SURFACE'], corner_radius=8, scrollbar_button_color=UI_COLORS['SURFACE'], scrollbar_button_hover_color=UI_COLORS['SURFACE'], width=self.sidebar_width, height=sidebar_max_height)
+        # Apply same height and light gray scrollbar to right sidebar
+        self.right_column = ctk.CTkScrollableFrame(
+            self.main_container,
+            fg_color=UI_COLORS['SURFACE'],
+            corner_radius=8,
+            scrollbar_button_color="#e0e0e0",
+            scrollbar_button_hover_color="#cccccc",
+            width=self.sidebar_width,
+            height=sidebar_max_height,
+            orientation="vertical"
+        )
         # self.left_column.grid_propagate(False)  # Not supported by CTkScrollableFrame
         self.left_column.configure(height=sidebar_max_height)
         if self.is_vertical_layout:
@@ -898,6 +908,8 @@ class FabricCNCApp:
         else:
             fullscreen_window.attributes('-fullscreen', True)
         fullscreen_window.grab_set()
+        # Force canvas redraw after expand to fix white screen bug
+        fullscreen_window.after(100, lambda: self._draw_canvas_content(fullscreen_window.children['!ctkcanvas'], fullscreen_window.winfo_width(), fullscreen_window.winfo_height()))
 
         # Canvas
         fullscreen_canvas = ctk.CTkCanvas(fullscreen_window, bg=UI_COLORS['SURFACE'], highlightthickness=0)
